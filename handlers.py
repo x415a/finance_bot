@@ -1,9 +1,10 @@
 from typing import Any, Iterable, Optional
+from tables import UserInfo
 import constants
 import json
 
 
-__all__ = ['get_config']
+__all__ = ['get_config', 'get_users_handler']
 
 
 class Config:
@@ -31,8 +32,27 @@ class Config:
         return self._vars['messages'][message_tag]
 
 
+class UsersAccessHandler:
+    def __init__(self):
+        pass
+
+    def update_users_list(self, users_list: Iterable[UserInfo]):
+        pass
+
+    def search_by_tg_id(self, id_: int):
+        pass
+
+    def search_by_userid(self):
+        pass
+
+
+_users = UsersAccessHandler()
 _config = Config()
 
 
 def get_config() -> Config:
     return _config
+
+
+def get_users_handler() -> UsersAccessHandler:
+    return _users

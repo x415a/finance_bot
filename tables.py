@@ -1,13 +1,17 @@
 import time
 from typing import Sequence
-from config import get_config
+from handlers import get_config, get_users_handler
 from collections import namedtuple
 import gspread
 import constants
 
-__all__ = ['DDSInfo', 'get_dds_list']
+
+__all__ = ['DDSInfo', 'UserInfo', 'get_dds_list']
+
 
 DDSInfo = namedtuple('DDSInfo', 'dds type pl payment')
+UserInfo = namedtuple('UserInfo', 'username userid access')
+
 
 _gservice = gspread.service_account(filename=str(constants.AUTH_KEY))
 _spreadsheets: dict[str, gspread.Spreadsheet] = \
@@ -34,7 +38,10 @@ def _update_dds_list():
 
 
 def _update_users_access():
-    pass
+    u_info = _scan_table_values('logins', ['username', 'userid', None, 'access'])
+    users = [UserInfo(user, u_info['userid'][i], u_info['access'])
+             for i, user in enumerate(u_info['username']) if user]
+    get_users_handler().update_users_list(users)
 
 
 def _update_payment_types():
