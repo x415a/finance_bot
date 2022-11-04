@@ -1,6 +1,5 @@
 import constants
-from config import get_config
-from tables import update_dds_list
+from tables import get_dds_list
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
@@ -32,9 +31,7 @@ def _generate_buttons_list(data: list[str], menu_code: int, query_code: int, pag
 
 
 def generate_dds_list_menu(query_code: int, page: int) -> InlineKeyboardMarkup:
-    if get_config().get_saved_data('dds_types') is None:
-        update_dds_list()
-    dds = [i.dds for i in get_config().get_saved_data('dds_types')]
+    dds = [i.dds for i in get_dds_list()]
     kb = InlineKeyboardMarkup()
     kb.add(*_generate_buttons_list(dds, constants.MENUCODE_DDS_LIST, query_code, page), row_width=1)
     return kb
