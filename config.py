@@ -1,3 +1,5 @@
+from typing import Any, Iterable, Optional
+
 import constants
 import json
 
@@ -9,12 +11,22 @@ class Config:
     def __init__(self):
         with open(constants.CONFIG, 'r', encoding='utf-8') as fs:
             self._vars = json.load(fs)
+        self._temp = {}
 
-    def get_spreadsheets_list(self):
+    def save_data(self, tag: str, data) -> None:
+        self._temp[tag] = data
+
+    def get_saved_data(self, tag: str) -> Optional[Any]:
+        return self._temp.get(tag, None)
+
+    def get_spreadsheets_list(self) -> Iterable[tuple[str, str]]:
         return iter(self._vars['spreadsheets_url'].items())
 
-    def get_spreadsheet_tag_info(self, tag: str):
+    def get_spreadsheet_tag_info(self, tag: str) -> dict[str, Any]:
         return self._vars['worksheets'][tag]
+
+    def get_bot_token(self, bot_name: str) -> str:
+        return self._vars['tokens'][bot_name]
 
 
 _config = Config()
