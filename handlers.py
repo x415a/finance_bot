@@ -1,5 +1,4 @@
 from typing import Any, Iterable, Optional
-
 import constants
 import json
 
@@ -27,6 +26,9 @@ class Config:
 
     def get_bot_token(self, bot_name: str) -> str:
         return self._vars['tokens'][bot_name]
+
+    def get_message_text(self, message_tag: str) -> str:
+        return self._vars['messages'][message_tag]
 
 
 _config = Config()
