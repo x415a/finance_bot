@@ -1,10 +1,14 @@
-from typing import Any, Iterable, Optional
-from types_def import UserInfo
+from typing import Any, Iterable, Optional, Type
+from telebot.types import CallbackQuery, Message, InlineKeyboardMarkup
+from types_def import Field
+from types_def import T_MESSAGE
+from util import get_next_query_code
 import constants
+import menus
 import json
 
 
-__all__ = ['get_config', 'get_users_handler']
+__all__ = ['get_config', 'get_users_handler', 'QueryManager']
 
 
 class Config:
@@ -37,20 +41,96 @@ class Config:
     def get_error_text(self, error: str) -> str:
         return self._vars['errors'][error]
 
+    def get_control_button_text(self, button: str) -> str:
+        return self._vars['control_buttons'][button]
+
+
+class QueryManager:
+    __slots__ = ('_query', '_fields', '_menus', '_cur_field', '_aliases', '_summary')
+
+    def __init__(self, *fields: tuple[Type[Field], bool]):
+        self._query = q = get_next_query_code()
+        self._fields = tuple(f[0](query=q, field_id=i, required=f[1])
+                             for i, f in enumerate(fields))
+        self._aliases = {i.get_name(): i for i in self._fields}
+        self._cur_field: Optional[Field] = None
+        self._summary = None
+
+    def _get_next_empty_field(self) -> Optional[Field]:
+        for f in self._fields:
+            if not f.is_ready():
+                return f
+        return None
+
+    def is_done(self) -> bool:
+        return self._get_next_empty_field() is None
+
+    def is_waits(self) -> bool:
+        return self._cur_field.is_ready()
+
+    def get_field(self, field: str) -> Field:
+        return self._aliases[field]
+
+    def get_query_code(self):
+        return self._query
+
+    def get_invite_message(self) -> T_MESSAGE:
+        self._cur_field = self._get_next_empty_field()
+        return self._cur_field.get_invite()
+
+    def handle_message(self, message: Message) -> Optional[T_MESSAGE]:
+        try:
+            t = self._cur_field.handle_message(message)
+            return t
+        except NotImplementedError:
+            return None
+
+    def handle_callback_query(self, callback: CallbackQuery, cb_data: menus.CallbackData) -> T_MESSAGE:
+        res = (f := self._fields[cb_data.field]).handle_callback(callback, cb_data)
+        if not f.is_ready():
+            self._cur_field = f
+        return res
+
+    def get_current_content_message(self) -> Message:
+        return self._cur_field.get_content_message()
+
+    def set_current_content_message(self, message: Message):
+        self._cur_field.set_content_message(message)
+
+    def generate_summary_message(self, add_text='') -> T_MESSAGE:
+        res = '\n'.join(f'{f.get_alias()}: {v if (v := f.get_str_value()) is not None else "-"}' for f in self._fields)
+        kb = InlineKeyboardMarkup()
+        kb.add(*menus.get_summary_control(self._query))
+        return get_config().get_message_text('summary_text').format(res) + add_text, kb
+
+    def confirm_summary_message(self) -> T_MESSAGE:
+        if not self.is_done():
+            return self.generate_summary_message(get_config().get_message_text('summary_not_done'))
+        text, _ = self.generate_summary_message(get_config().get_message_text('summary_confirmed'))
+        return text, None
+
+    def has_summary_message(self) -> bool:
+        return self._summary is not None
+
+    def set_current_summary_message(self, message: Message):
+        self._summary = message
+
+    def get_current_summary_message(self) -> Message:
+        return self._summary
 
 
 class UsersAccessHandler:
     def __init__(self):
-        pass
+        self._queries: dict[int, Optional[QueryManager]] = {}
 
-    def update_users_list(self, users_list: Iterable[UserInfo]):
-        pass
+    def get_user_query(self, user_id: int) -> Optional[QueryManager]:
+        return self._queries.get(user_id, None)
 
-    def search_by_tg_id(self, id_: int):
-        pass
+    def set_user_query(self, user_id: int, query: QueryManager):
+        self._queries[user_id] = query
 
-    def search_by_userid(self):
-        pass
+    def reset_user_query(self, user_id: int):
+        self._queries[user_id] = None
 
 
 _users = UsersAccessHandler()

@@ -48,7 +48,7 @@ def _update_payment_types():
 
 def _update_spreadsheets():
     _update_dds_list()
-    _update_users_access()
+    # _update_users_access()
     _update_payment_types()
 
 
