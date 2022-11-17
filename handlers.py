@@ -31,6 +31,13 @@ class Config:
     def get_message_text(self, message_tag: str) -> str:
         return self._vars['messages'][message_tag]
 
+    def get_field_info(self, field: str) -> dict[str, Any]:
+        return self._vars[f'fields'][field]
+
+    def get_error_text(self, error: str) -> str:
+        return self._vars['errors'][error]
+
+
 
 class UsersAccessHandler:
     def __init__(self):

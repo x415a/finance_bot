@@ -1,17 +1,16 @@
 import constants
-from tables import get_dds_list
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
 
-__all__ = ['generate_dds_list_menu']
+__all__ = ['ValuesListMenu', 'decode_callback_data', 'encode_callback_data']
 
 
-def _encode_callback_data(*args):
+def encode_callback_data(*args):
     return constants.BUTTONS_CALLBACK_SEP.join(map(str, args))
 
 
-def _decode_callback_data(data: str, *types):
-    return [types[i](v) for i, v in enumerate(data.split(constants.BUTTONS_CALLBACK_SEP))]
+def decode_callback_data(data: str, *types):
+    return [types[min(i, len(types) - 1)](v) for i, v in enumerate(data.split(constants.BUTTONS_CALLBACK_SEP))]
 
 
 def _generate_buttons_list(data: list[str], menu_code: int, query_code: int, page: int):
@@ -19,19 +18,41 @@ def _generate_buttons_list(data: list[str], menu_code: int, query_code: int, pag
     max_page = len(data) // height + (1 if len(data) % height else 0)
     page = min(max_page, max(1, page))
 
-    buttons = [InlineKeyboardButton(text=t, callback_data=_encode_callback_data(menu_code, query_code, id_))
+    buttons = [InlineKeyboardButton(text=t, callback_data=encode_callback_data(menu_code, query_code, id_))
                for id_, t in enumerate(data[height * (page - 1):height * page])]
     if height < constants.MENU_HEIGHT:
         pages = [(p := max(1, page - 1), f'<< {p} / {max_page} стр.'),
                  (p := min(max_page, page + 1), f'>> {p} / {max_page} стр.')]
         buttons.extend(InlineKeyboardButton(text=t,
-                                            callback_data=_encode_callback_data(menu_code, query_code, 'page', page))
+                                            callback_data=encode_callback_data(menu_code, query_code, 'page', page))
                        for page, t in pages)
     return buttons
 
 
-def generate_dds_list_menu(query_code: int, page: int) -> InlineKeyboardMarkup:
-    dds = [i.dds for i in get_dds_list()]
-    kb = InlineKeyboardMarkup()
-    kb.add(*_generate_buttons_list(dds, constants.MENUCODE_DDS_LIST, query_code, page), row_width=1)
-    return kb
+class ValuesListMenu:
+    def __init__(self, menu_code: int):
+        self._code = menu_code
+        self._page = []
+
+    def menu_code(self):
+        return self._code
+
+    def get_values(self) -> list[str]:
+        raise NotImplementedError()
+
+    def query_code(self) -> int:
+        raise NotImplementedError()
+
+    def on_choice(self, value: str) -> str:
+        raise NotImplementedError()
+
+    def generate_menu(self, page: int) -> InlineKeyboardMarkup:
+        kb = InlineKeyboardMarkup()
+        self._page = self.get_values()
+        kb.add(*_generate_buttons_list(self._page, self._code, self.query_code(), page), row_width=1)
+        return kb
+
+    def handle_callback(self, callback: CallbackQuery, data: str) -> tuple[str, InlineKeyboardMarkup]:
+        if data.startswith('page'):
+            return callback.message.text, self.generate_menu(int(data[4:]))
+        return self.on_choice(self._page[int(data)]), callback.message.reply_markup
