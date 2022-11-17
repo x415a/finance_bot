@@ -1,142 +1,182 @@
-from telebot.types import ReplyKeyboardMarkup, InlineKeyboardMarkup, Message, CallbackQuery
-from typing import Optional, Union
-from menus import ValuesListMenu, decode_callback_data, encode_callback_data
-from constants import MENUCODE_DDS_LIST, MENUCODE_PAYMENT_TYPES
+from typing import Optional
+
+from telebot.types import InlineKeyboardMarkup, Message, CallbackQuery
+import constants
+import menus
 from tables import get_dds_list, get_payment_types
 from handlers import get_config
-from util import get_next_query_code
+from types_def import T_MESSAGE, Field as FieldBase
 
 
-_MSG_T_ALIAS = tuple[str, Optional[Union[InlineKeyboardMarkup, ReplyKeyboardMarkup]]]
-
-
-class Field:
+class Field(FieldBase):
     __FNAME__ = None
-    __slots__ = ('_query', '_val', '_name')
+    __slots__ = ('_query', '_val', '_id', '_req', '_skipped', '_msg')
 
-    def __init__(self, q_code: int, name: str):
-        self._query = q_code
+    def __init__(self, query: int, field_id: int, required: bool):
+        self._query = query
         self._val = None
-        self._name = name
+        self._id = field_id
+        self._req = required
+        self._skipped = False
+        self._msg = None
 
-    def get_default_text(self) -> str:
-        return get_config().get_field_info(self.__FNAME__)['text']
+    def _get_default_kb(self) -> InlineKeyboardMarkup:
+        kb = InlineKeyboardMarkup()
+        kb.row(*menus.get_control_buttons(self._query, self._id, self._req))
+        return kb
 
-    def name(self) -> str:
-        return self._name
+    def id(self) -> int:
+        return self._id
 
-    def get_invite(self) -> _MSG_T_ALIAS:
-        raise NotImplementedError()
+    @classmethod
+    def get_name(cls) -> str:
+        return cls.__FNAME__
 
-    def on_message(self, message: Message):
-        raise NotImplementedError()
+    @classmethod
+    def get_alias(cls) -> str:
+        return get_config().get_field_info(cls.__FNAME__)['alias']
 
     def query_code(self) -> int:
         return self._query
 
+    def is_required(self) -> bool:
+        return self._req
+
+    def invite_text(self) -> str:
+        return get_config().get_field_info(self.__FNAME__)['text']
+
     def set_value(self, value):
         self._val = value
 
-    def get_value(self):
-        return self._val
+    def get_value(self, default_v):
+        return self._val if not self._skipped else default_v
 
     def is_ready(self) -> bool:
-        return self._val is not None
+        return self._skipped or self._val is not None
+
+    def get_invite(self) -> T_MESSAGE:
+        return self.invite_text(), self._get_default_kb()
+
+    def on_message(self, message: Message) -> str:
+        raise NotImplementedError()
+
+    def on_callback(self, callback: CallbackQuery, cb_data: menus.CallbackData) -> str:
+        raise NotImplementedError()
+
+    def handle_message(self, message: Message) -> T_MESSAGE:
+        return self.on_message(message), self._get_default_kb()
+
+    def get_content_message(self) -> Message:
+        return self._msg
+
+    def handle_callback(self, callback: CallbackQuery, cb_data: menus.CallbackData) -> T_MESSAGE:
+        if cb_data.button == constants.BUTTON_TYPE_CONTROL:
+            if cb_data.data == 'change':
+                self._val = None
+                self._skipped = False
+                return self.get_invite()
+            elif cb_data.data == 'skip' and not self._req:
+                self._skipped = True
+                return self.invite_text() + get_config().get_message_text('value_skipped'), callback.message.reply_markup
+            else:
+                raise RuntimeError(f'Invalid control button ("{callback.data}")')
+        else:
+            text, kb = self.on_callback(callback, cb_data)
+            if kb is None:
+                kb = callback.message.reply_markup
+            return text, kb
+
+    def set_content_message(self, message: Message):
+        self._msg = message
+
+    def get_str_value(self) -> Optional[str]:
+        return str(self._val) if self._val is not None else None
 
 
-class DDSField(Field, ValuesListMenu):
+class StrictField(Field):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._page = []
+
+    def _generate_menu(self, page: int) -> InlineKeyboardMarkup:
+        kb = InlineKeyboardMarkup()
+        self._page = self.get_values()
+        kb.add(*menus.generate_buttons_list(self._page, self.query_code(), self.id(), page), row_width=1)
+        return kb
+
+    def get_invite(self) -> T_MESSAGE:
+        return self.invite_text(), self._generate_menu(1)
+
+    def on_callback(self, callback: CallbackQuery, cb_data: menus.CallbackData) -> T_MESSAGE:
+        if cb_data.data.startswith('page'):
+            offs = len(f'page{constants.BUTTONS_CALLBACK_SEP}')
+            return callback.message.text, self._generate_menu(int(cb_data.data[offs:]))
+        return self.on_choice(self._page[int(cb_data.data)]), callback.message.reply_markup
+
+    def get_values(self) -> list[str]:
+        raise NotImplementedError()
+
+    def on_choice(self, value: str) -> str:
+        raise NotImplementedError()
+
+
+class DDSField(StrictField):
     __FNAME__ = 'dds'
-
-    def __init__(self, q_code: int):
-        Field.__init__(self, q_code, get_config().get_field_info(self.__FNAME__)['alias'])
-        ValuesListMenu.__init__(self, MENUCODE_DDS_LIST)
-
-    def get_invite(self) -> _MSG_T_ALIAS:
-        return self.get_default_text(), self.generate_menu(1)
 
     def get_values(self) -> list[str]:
         return [i.dds for i in get_dds_list()]
 
     def on_choice(self, value: str) -> str:
         self.set_value(value)
-        return self.get_default_text() + value
+        return self.invite_text() + value
 
 
-class PaymentTypes(Field, ValuesListMenu):
+class PaymentTypes(StrictField):
     __FNAME__ = 'payment_type'
-
-    def __init__(self, q_code: int):
-        Field.__init__(self, q_code, get_config().get_field_info(self.__FNAME__)['alias'])
-        ValuesListMenu.__init__(self, MENUCODE_PAYMENT_TYPES)
-
-    def get_invite(self) -> _MSG_T_ALIAS:
-        return self.get_default_text(), self.generate_menu(1)
 
     def get_values(self) -> list[str]:
         return [i.value for i in get_payment_types()]
 
     def on_choice(self, value: str) -> str:
         self.set_value(value)
-        return self.get_default_text() + value
+        return self.invite_text() + value
 
 
 class PriceAmount(Field):
     __FNAME__ = 'price_amount'
 
-    def get_invite(self) -> _MSG_T_ALIAS:
-        return self.get_default_text(), None
-
     def on_message(self, message: Message) -> str:
         try:
-            self.set_value(float(message.text.strip()))
-            return ''
+            self.set_value(v := float(message.text.strip()))
+            return self.invite_text() + (f'{v:.0f}' if v.is_integer() else f'{v:.2f}')
         except ValueError:
-            return get_config().get_error_text('invalid_price_amount')
+            return f'{self.invite_text()}\n\n' + get_config().get_error_text('invalid_price_amount')
+
+    def get_str_value(self) -> Optional[str]:
+        if (v := self.get_value(None)) is None:
+            return None
+        return f'{v:.0f}' if v.is_integer() else f'{v:.2f}'
 
 
-class QueryManager:
-    __slots__ = ('_query', '_fields', '_menus', '_cur_field', '_aliases')
+class Contractor(Field):
+    __FNAME__ = 'contractor'
 
-    def __init__(self, *fields: Field):
-        self._query = get_next_query_code()
-        self._fields = fields
-        self._cur_field: Optional[Field] = None
-        self._menus: dict[int, ValuesListMenu] = {}
-        self._aliases = {i.name: i for i in fields}
+    def on_message(self, message: Message) -> str:
+        self.set_value(message.text)
+        return self.invite_text() + self.get_value('')
 
-    def _get_next_empty_field(self) -> Optional[Field]:
-        for f in self._fields:
-            if not f.is_ready():
-                if isinstance(f, ValuesListMenu):
-                    self._menus[f.menu_code()] = f
-                    return f
-        return None
 
-    def is_done(self) -> bool:
-        for f in self._fields:
-            if not f.is_ready():
-                return False
-        return True
+class Project(Field):
+    __FNAME__ = 'project'
 
-    def get_field(self, field: str) -> Field:
-        return self._aliases[field]
+    def on_message(self, message: Message) -> str:
+        self.set_value(message.text)
+        return self.invite_text() + self.get_value('')
 
-    def get_query_code(self):
-        return self._query
 
-    def get_first_message(self) -> _MSG_T_ALIAS:
-        self._cur_field = self._get_next_empty_field()
-        return self._cur_field.get_invite()
+class Comments(Field):
+    __FNAME__ = 'comments'
 
-    def handle_new_message(self, message: Message) -> _MSG_T_ALIAS:
-        t = self._cur_field.on_message(message)
-        if self._cur_field.is_ready():
-            self._cur_field = self._get_next_empty_field()
-        return t
-
-    def handle_callback_query(self, callback: CallbackQuery) -> _MSG_T_ALIAS:
-        _, menu, *args = decode_callback_data(callback.data, int, int, str)
-        res = self._menus[menu].handle_callback(callback, encode_callback_data(*args))
-        if self._cur_field.is_ready():
-            self._cur_field = self._get_next_empty_field()
-        return res
+    def on_message(self, message: Message) -> str:
+        self.set_value(message.text)
+        return self.invite_text() + self.get_value('')
