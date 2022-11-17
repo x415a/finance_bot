@@ -1,16 +1,12 @@
 import time
 from typing import Sequence
 from handlers import get_config, get_users_handler
-from collections import namedtuple
+from types_def import *
 import gspread
 import constants
 
 
-__all__ = ['DDSInfo', 'UserInfo', 'get_dds_list']
-
-
-DDSInfo = namedtuple('DDSInfo', 'dds type pl payment')
-UserInfo = namedtuple('UserInfo', 'username userid access')
+__all__ = ['get_dds_list', 'get_payment_types']
 
 
 _gservice = gspread.service_account(filename=str(constants.AUTH_KEY))
@@ -30,7 +26,7 @@ def _scan_table_values(tag: str, headers: Sequence[str]):
 
 def _update_dds_list():
     dds_info = _scan_table_values('dds', DDSInfo._fields)
-    res_info = tuple(DDSInfo(dds, dds_info['type'][i], dds_info['pl'][i], dds_info['payment'][i])
+    res_info = tuple(DDSInfo(dds, dds_info['type'][i], dds_info['pl'][i])
                      for i, dds in enumerate(dds_info['dds']) if dds)
 
     conf = get_config()
@@ -45,7 +41,9 @@ def _update_users_access():
 
 
 def _update_payment_types():
-    pass
+    p_info = _scan_table_values('payment_types', ['value'])
+    types = tuple(PaymentTypeInfo(v) for v in p_info['value'])
+    get_config().save_data('payment_types', types)
 
 
 def _update_spreadsheets():
@@ -56,8 +54,8 @@ def _update_spreadsheets():
 
 def _autoupdate():
     cf = get_config()
-    if (lu := cf.get_saved_data('last_spreadsheet_update')) is None \
-            or time.time() - lu > constants.EXCEL_UPDATE_INTERVAL:
+    if ((lu := cf.get_saved_data('last_spreadsheet_update')) is None
+            or time.time() - lu > constants.EXCEL_UPDATE_INTERVAL):
         _update_spreadsheets()
         cf.save_data('last_spreadsheet_update', time.time())
 
@@ -65,3 +63,8 @@ def _autoupdate():
 def get_dds_list() -> tuple[DDSInfo]:
     _autoupdate()
     return get_config().get_saved_data('dds_types')
+
+
+def get_payment_types() -> tuple[PaymentTypeInfo]:
+    _autoupdate()
+    return get_config().get_saved_data('payment_types')
