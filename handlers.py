@@ -1,5 +1,5 @@
 from typing import Any, Iterable, Optional
-from tables import UserInfo
+from types_def import UserInfo
 import constants
 import json
 
