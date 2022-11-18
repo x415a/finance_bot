@@ -8,7 +8,7 @@ import menus
 import fields
 
 
-def handle_user_message(bot: TeleBot, msg: Message):
+def handle_user_message(msg: Message, bot: TeleBot):
     if (q := get_users_handler().get_user_query(bot, msg.from_user.id)) is None:
         return
     text, kb = q.handle_message(msg)
@@ -24,7 +24,7 @@ def handle_user_message(bot: TeleBot, msg: Message):
     update_query(bot, q, msg.chat)
 
 
-def handle_user_callback(bot: TeleBot, callback: CallbackQuery):
+def handle_user_callback(callback: CallbackQuery, bot: TeleBot):
     bot.answer_callback_query(callback.id)
     cb_data = menus.decode_callback_data(callback.data)
 

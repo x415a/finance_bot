@@ -1,12 +1,10 @@
 from telebot import TeleBot
 from telebot.types import Message
-from util import BotExcHandler
 from handlers import get_config
 import bot_funcs
 
 
 _bot = TeleBot(get_config().get_bot_token('finance'))
-_bot.exception_handler = BotExcHandler()
 
 
 @_bot.message_handler(commands=['start'])
