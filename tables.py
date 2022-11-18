@@ -1,9 +1,12 @@
-import time
+import datetime
+from threading import Thread
 from typing import Sequence
 from handlers import get_config, get_users_handler
 from types_def import *
+import time
 import gspread
 import constants
+import traceback as tb
 
 
 __all__ = ['get_dds_list', 'get_payment_types']
@@ -35,8 +38,13 @@ def _update_dds_list():
 
 def _update_users_access():
     u_info = _scan_table_values('logins', ['username', 'userid', None, 'access'])
-    users = [UserInfo(user, u_info['userid'][i], u_info['access'])
-             for i, user in enumerate(u_info['username']) if user]
+    users = []
+    for i, user in enumerate(u_info['username']):
+        try:
+            if user:
+                users.append(UserInfo(user, int(u_info['userid'][i]), u_info['access'][i].lower() == 'true'))
+        except (ValueError, AttributeError):
+            pass
     get_users_handler().update_users_list(users)
 
 
@@ -48,23 +56,30 @@ def _update_payment_types():
 
 def _update_spreadsheets():
     _update_dds_list()
-    # _update_users_access()
+    _update_users_access()
     _update_payment_types()
 
 
-def _autoupdate():
-    cf = get_config()
-    if ((lu := cf.get_saved_data('last_spreadsheet_update')) is None
-            or time.time() - lu > constants.EXCEL_UPDATE_INTERVAL):
-        _update_spreadsheets()
-        cf.save_data('last_spreadsheet_update', time.time())
-
-
 def get_dds_list() -> tuple[DDSInfo]:
-    _autoupdate()
     return get_config().get_saved_data('dds_types')
 
 
 def get_payment_types() -> tuple[PaymentTypeInfo]:
-    _autoupdate()
     return get_config().get_saved_data('payment_types')
+
+
+def start_autoupdate():
+    while True:
+        try:
+            _update_spreadsheets()
+        except Exception:
+            print('-- EXCEL UPDATE ERROR --')
+            tb.print_exc()
+        else:
+            print(f'Excel success updated at {datetime.datetime.now():%d.%m.%y/%H:%M}')
+        time.sleep(constants.EXCEL_UPDATE_INTERVAL)
+
+
+def get_autoupdate_thread() -> Thread:
+    (th := Thread(target=start_autoupdate, name='Excel update thread')).start()
+    return th

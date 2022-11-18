@@ -2,7 +2,7 @@ from typing import Any, Iterable, Optional, Type
 from telebot import TeleBot
 from telebot.types import CallbackQuery, Message, InlineKeyboardMarkup
 from types_def import Field
-from types_def import T_MESSAGE
+from types_def import T_MESSAGE, UserInfo
 from util import get_next_query_code
 import constants
 import menus
@@ -121,11 +121,45 @@ class QueryManager:
 
 
 class UsersAccessHandler:
+    __slots__ = ('_queries', '_telegram_users', '_database_users')
+
     def __init__(self):
         self._queries: dict[str, Optional[QueryManager]] = {}
+        self._telegram_users = {}
+        self._database_users = {}
+        self._load()
+
+    def _save(self):
+        with open(constants.USERS, 'w', encoding='utf-8') as fs:
+            json.dump([self._telegram_users, self._database_users], fs)
+
+    def _load(self):
+        with open(constants.USERS, 'r', encoding='utf-8') as fs:
+            self._telegram_users, self._database_users = json.load(fs)
+
+    def update_users_list(self, users: list[UserInfo]):
+        self._database_users = {u.userid: u for u in users}
+        self._telegram_users = {k: v for k, v in self._telegram_users.items() if v in self._database_users}
+        self._save()
+
+    def reset_user_registration(self, telegram_id: int):
+        self._telegram_users.pop(telegram_id, None)
+        self._save()
+
+    def register_user(self, telegram_id: int, user_id: int) -> bool:
+        if user_id not in self._database_users or user_id in self._telegram_users.values():
+            return False
+        self._telegram_users[telegram_id] = user_id
+        return True
+
+    def get_user_access_info(self, telegram_id: int) -> Optional[UserInfo]:
+        return self._database_users.get(self._telegram_users.get(telegram_id, None), None)
 
     def get_user_query(self, bot: TeleBot, user_id: int) -> Optional[QueryManager]:
         return self._queries.get(f'{bot.token}{user_id}', None)
+
+    def is_user_has_access(self, telegram_id: int) -> bool:
+        return self._telegram_users.get(telegram_id, None) is not None
 
     def set_user_query(self, bot: TeleBot, user_id: int, query: QueryManager):
         self._queries[f'{bot.token}{user_id}'] = query

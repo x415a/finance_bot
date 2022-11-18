@@ -3,13 +3,31 @@ from typing import Optional
 from telebot import TeleBot
 from telebot.types import CallbackQuery, InlineKeyboardMarkup, Chat, Message
 from telebot.apihelper import ApiTelegramException
-from handlers import QueryManager, get_users_handler
+from handlers import QueryManager, get_users_handler, get_config
 import menus
 import fields
 
 
+def register_user(message: Message, bot: TeleBot):
+    try:
+        code = int(message.text.strip())
+        if get_users_handler().register_user(message.from_user.id, code):
+            user = get_users_handler().get_user_access_info(message.from_user.id)
+            bot.send_message(message.chat.id, get_config().get_message_text('auth_success').format(name=user.username))
+        else:
+            bot.send_message(message.chat.id, get_config().get_message_text('auth_failed'))
+    except ValueError:
+        send_access_denied(bot, message.chat)
+
+
+def send_access_denied(bot: TeleBot, chat: Chat):
+    bot.send_message(chat.id, get_config().get_message_text('auth'))
+
+
 def handle_user_message(msg: Message, bot: TeleBot):
     if (q := get_users_handler().get_user_query(bot, msg.from_user.id)) is None:
+        if not get_users_handler().is_user_has_access(msg.from_user.id):
+            register_user(msg, bot)
         return
     text, kb = q.handle_message(msg)
     msg = q.get_current_content_message()
@@ -33,6 +51,9 @@ def handle_user_callback(callback: CallbackQuery, bot: TeleBot):
         return
 
     if cb_data.data == 'summary':
+        if not get_users_handler().is_user_has_access(callback.from_user.id):
+            send_access_denied(bot, callback.message.chat)
+            return
         update_query_summary(bot, q, callback)
         return
 

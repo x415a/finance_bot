@@ -1,5 +1,4 @@
 from typing import Optional
-
 from telebot.types import InlineKeyboardMarkup, Message, CallbackQuery
 import constants
 import menus
