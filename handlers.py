@@ -1,4 +1,5 @@
 from typing import Any, Iterable, Optional, Type
+from telebot import TeleBot
 from telebot.types import CallbackQuery, Message, InlineKeyboardMarkup
 from types_def import Field
 from types_def import T_MESSAGE
@@ -121,16 +122,16 @@ class QueryManager:
 
 class UsersAccessHandler:
     def __init__(self):
-        self._queries: dict[int, Optional[QueryManager]] = {}
+        self._queries: dict[str, Optional[QueryManager]] = {}
 
-    def get_user_query(self, user_id: int) -> Optional[QueryManager]:
-        return self._queries.get(user_id, None)
+    def get_user_query(self, bot: TeleBot, user_id: int) -> Optional[QueryManager]:
+        return self._queries.get(f'{bot.token}{user_id}', None)
 
-    def set_user_query(self, user_id: int, query: QueryManager):
-        self._queries[user_id] = query
+    def set_user_query(self, bot: TeleBot, user_id: int, query: QueryManager):
+        self._queries[f'{bot.token}{user_id}'] = query
 
-    def reset_user_query(self, user_id: int):
-        self._queries[user_id] = None
+    def reset_user_query(self, bot: TeleBot, user_id: int):
+        self._queries[f'{bot.token}{user_id}'] = None
 
 
 _users = UsersAccessHandler()
