@@ -33,8 +33,9 @@ def generate_buttons_list(data: list[str], query_code: int, field_id: int, page:
                for id_, t in enumerate(data[first:height * page])]
 
     if height < constants.MENU_HEIGHT:
-        pages = [(p := max(1, page - 1), f'<< {p} / {max_page} стр.'),
-                 (p := min(max_page, page + 1), f'>> {p} / {max_page} стр.')]
+        page = max(1, min(max_page, page))
+        pages = ([(p := page - 1, f'< {p} / {max_page} стр.')] if page > 1 else []) + \
+                ([(p := page + 1, f'{p} / {max_page} стр. >')] if page < max_page else [])
         buttons.extend(InlineKeyboardButton(text=t,
                                             callback_data=encode_callback_data(query_code,
                                                                                field_id,
